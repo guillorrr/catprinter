@@ -1,0 +1,108 @@
+*PPD-Adobe: "4.3"
+*% Cat thermal printer (MXW01, GB01/GB02/GB03/GT01) through the catprinter CUPS backend.
+*% The head is 384 dots wide at 203 dpi (48 mm). CUPS renders jobs to 8-bit gray raster
+*% and hands them to the backend, which trims blank space, converts and prints them.
+*FormatVersion: "4.3"
+*FileVersion: "1.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PCFileName: "CATPRNT.PPD"
+*Manufacturer: "Cat Printer"
+*Product: "(Cat Printer)"
+*ModelName: "Cat Printer 48mm"
+*ShortNickName: "Cat Printer 48mm"
+*NickName: "Cat Printer 48mm (catprinter backend)"
+*PSVersion: "(3010.000) 0"
+*LanguageLevel: "3"
+*ColorDevice: False
+*DefaultColorSpace: Gray
+*FileSystem: False
+*Throughput: "1"
+*LandscapeOrientation: Plus90
+*TTRasterizer: Type42
+*cupsVersion: 2.4
+*cupsModelNumber: 0
+*cupsManualCopies: False
+*cupsFilter: "application/vnd.cups-raster 0 -"
+
+*OpenUI *PageSize/Paper: PickOne
+*OrderDependency: 10 AnySetup *PageSize
+*DefaultPageSize: w136h283
+*PageSize w136h142/48 x 50 mm: "<</PageSize[136.3 141.7]/ImagingBBox null>>setpagedevice"
+*PageSize w136h283/48 x 100 mm: "<</PageSize[136.3 283.5]/ImagingBBox null>>setpagedevice"
+*PageSize w136h425/48 x 150 mm: "<</PageSize[136.3 425.2]/ImagingBBox null>>setpagedevice"
+*PageSize w136h842/48 x 297 mm: "<</PageSize[136.3 841.9]/ImagingBBox null>>setpagedevice"
+*PageSize A4/A4 (shrunk to 48 mm): "<</PageSize[595 842]/ImagingBBox null>>setpagedevice"
+*PageSize Letter/Letter (shrunk to 48 mm): "<</PageSize[612 792]/ImagingBBox null>>setpagedevice"
+*CloseUI: *PageSize
+
+*OpenUI *PageRegion/Paper: PickOne
+*OrderDependency: 10 AnySetup *PageRegion
+*DefaultPageRegion: w136h283
+*PageRegion w136h142/48 x 50 mm: "<</PageSize[136.3 141.7]/ImagingBBox null>>setpagedevice"
+*PageRegion w136h283/48 x 100 mm: "<</PageSize[136.3 283.5]/ImagingBBox null>>setpagedevice"
+*PageRegion w136h425/48 x 150 mm: "<</PageSize[136.3 425.2]/ImagingBBox null>>setpagedevice"
+*PageRegion w136h842/48 x 297 mm: "<</PageSize[136.3 841.9]/ImagingBBox null>>setpagedevice"
+*PageRegion A4/A4 (shrunk to 48 mm): "<</PageSize[595 842]/ImagingBBox null>>setpagedevice"
+*PageRegion Letter/Letter (shrunk to 48 mm): "<</PageSize[612 792]/ImagingBBox null>>setpagedevice"
+*CloseUI: *PageRegion
+
+*DefaultImageableArea: w136h283
+*ImageableArea w136h142/48 x 50 mm: "0 0 136.3 141.7"
+*ImageableArea w136h283/48 x 100 mm: "0 0 136.3 283.5"
+*ImageableArea w136h425/48 x 150 mm: "0 0 136.3 425.2"
+*ImageableArea w136h842/48 x 297 mm: "0 0 136.3 841.9"
+*ImageableArea A4/A4 (shrunk to 48 mm): "0 0 595 842"
+*ImageableArea Letter/Letter (shrunk to 48 mm): "0 0 612 792"
+
+*DefaultPaperDimension: w136h283
+*PaperDimension w136h142/48 x 50 mm: "136.3 141.7"
+*PaperDimension w136h283/48 x 100 mm: "136.3 283.5"
+*PaperDimension w136h425/48 x 150 mm: "136.3 425.2"
+*PaperDimension w136h842/48 x 297 mm: "136.3 841.9"
+*PaperDimension A4/A4 (shrunk to 48 mm): "595 842"
+*PaperDimension Letter/Letter (shrunk to 48 mm): "612 792"
+
+*% Custom lengths on the 48 mm roll.
+*VariablePaperSize: True
+*MaxMediaWidth: "136.3"
+*MaxMediaHeight: "14173"
+*HWMargins: 0 0 0 0
+*CustomPageSize True: "pop pop pop <</PageSize[5 -2 roll]/ImagingBBox null>>setpagedevice"
+*ParamCustomPageSize Width: 1 points 36 136.3
+*ParamCustomPageSize Height: 2 points 36 14173
+*ParamCustomPageSize WidthOffset: 3 points 0 0
+*ParamCustomPageSize HeightOffset: 4 points 0 0
+*ParamCustomPageSize Orientation: 5 int 0 0
+
+*OpenUI *Resolution/Resolution: PickOne
+*OrderDependency: 20 AnySetup *Resolution
+*DefaultResolution: 203dpi
+*Resolution 203dpi/203 dpi: "<</HWResolution[203 203]>>setpagedevice"
+*CloseUI: *Resolution
+
+*OpenUI *ColorModel/Color Mode: PickOne
+*OrderDependency: 20 AnySetup *ColorModel
+*DefaultColorModel: Gray
+*ColorModel Gray/Grayscale: "<</cupsColorOrder 0/cupsColorSpace 18/cupsBitsPerColor 8>>setpagedevice"
+*CloseUI: *ColorModel
+
+*% Read by the backend, not by the filters.
+*OpenUI *CatTone/Tone: PickOne
+*OrderDependency: 30 AnySetup *CatTone
+*DefaultCatTone: Threshold
+*CatTone Threshold/Text, labels and barcodes: ""
+*CatTone Dither/Photos (dithered black and white): ""
+*CatTone Gray/Photos (16 gray levels, MXW01 only): ""
+*CloseUI: *CatTone
+
+*OpenUI *CatEnergy/Darkness: PickOne
+*OrderDependency: 30 AnySetup *CatEnergy
+*DefaultCatEnergy: 100
+*CatEnergy 60/Light: ""
+*CatEnergy 80/Medium: ""
+*CatEnergy 100/Dark: ""
+*CloseUI: *CatEnergy
+
+*DefaultFont: Courier
+*Font Courier: Standard "(002.004S)" Standard ROM

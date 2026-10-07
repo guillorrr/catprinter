@@ -157,30 +157,31 @@ async def run_mxw01(ble_device, img, energy: int, gray_levels=None):
         client = await connect_with_retries(make_client)
     except ConnectionError as e:
         logger.error(f"🛑 {e}")
-        return
+        return False
     try:
         logger.info(f"✅ Connected; MTU: {client.mtu_size}")
         await print_mxw01(client, img, energy, gray_levels)
+        return True
     except (OSError, RuntimeError, asyncio.TimeoutError) as e:
         logger.error(f"🛑 {e or 'Timed out waiting for the printer.'}")
+        return False
     finally:
         await client.disconnect()
 
 
 async def run_ble(img, energy: int, device: Optional[str], gray_levels=None):
     '''Prints img (boolean, True = black). gray_levels (0 = white ... 15 = black) is used
-    instead on printers with a grayscale mode.'''
+    instead on printers with a grayscale mode. Returns whether the job was printed.'''
     try:
         ble_device = await get_device(device)
     except RuntimeError as e:
         logger.error(f"🛑 {e}")
-        return
+        return False
     logger.info(f"⏳ Connecting to {ble_device}...")
 
     if ble_device.name in MXW01_NAMES:
         logger.info("ℹ️ Detected an MXW01 printer.")
-        await run_mxw01(ble_device, img, energy, gray_levels)
-        return
+        return await run_mxw01(ble_device, img, energy, gray_levels)
 
     if gray_levels is not None:
         logger.warning("⚠️ This printer has no grayscale mode; printing dithered instead.")
@@ -189,7 +190,7 @@ async def run_ble(img, energy: int, device: Optional[str], gray_levels=None):
         client = await connect_with_retries(lambda: BleakClient(ble_device))
     except ConnectionError as e:
         logger.error(f"🛑 {e}")
-        return
+        return False
     try:
         # XXX: BlueZ incorrectly reports a fixed MTU of 23; force MTU negotiation manually.
         # https://bleak.readthedocs.io/en/latest/api/client.html#bleak.BleakClient.mtu_size
@@ -219,7 +220,9 @@ async def run_ble(img, energy: int, device: Optional[str], gray_levels=None):
             await asyncio.wait_for(
                 wait_for_printer_ready(event), timeout=WAIT_FOR_PRINTER_DONE_TIMEOUT
             )
+            return True
         except asyncio.TimeoutError:
             logger.error("🛑 Timed out while waiting for printer done event. Exiting.")
+            return False
     finally:
         await client.disconnect()

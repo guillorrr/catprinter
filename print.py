@@ -91,8 +91,9 @@ def main():
         gray_levels = read_img_gray_levels(filename, PRINT_WIDTH)
 
     # Try to autodiscover a printer if --device is not specified.
-    asyncio.run(run_ble(bin_img, energy=args.energy, device=args.device,
-                        gray_levels=gray_levels))
+    ok = asyncio.run(run_ble(bin_img, energy=args.energy, device=args.device,
+                             gray_levels=gray_levels))
+    sys.exit(0 if ok else 1)
 
 
 if __name__ == '__main__':

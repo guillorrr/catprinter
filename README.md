@@ -13,6 +13,8 @@ This repository contains Python code for talking to the cat printer over Bluetoo
 | GB01, GB02, GB03, GT01 | `0x51 0x78` commands on `0xae01` | Original upstream support. |
 | **MXW01** | `0x22 0x21` commands on `0xae01`, image data on `0xae03` | Added in this fork. Detected automatically from its advertised name. Supports 16-level grayscale. |
 
+It can also be installed as a **CUPS printer**, so any program (and other computers on the network, including Windows) can print to it. See [Printing from CUPS and Windows](#printing-from-cups-and-windows).
+
 This fork can also print **ZPL labels** (the Zebra label language Mercado Libre uses for its product and shipping labels). See [ZPL labels](#zpl-labels-mercado-libre).
 
 # Installation
@@ -177,6 +179,47 @@ ZPL works in 203 dpi dots, the same resolution as these printers, so:
 - `--zpl-layout scale` shrinks the label as drawn instead (about 48% for a 10 cm label), which keeps the layout but makes the text very small.
 
 The text uses the closest installed condensed bold font to Zebra's `^A0` (Liberation Sans Narrow, Nimbus Sans Narrow or DejaVu Sans Condensed).
+
+# Printing from CUPS and Windows
+
+[`cups/`](cups/) turns the printer into a regular CUPS printer on Linux. The computer running CUPS talks to the printer over Bluetooth; everything else, including other computers on the network, prints to CUPS.
+
+```bash
+$ sudo ./cups/install.sh 48:0F:57:44:BF:3C --share   # your printer's address, or "auto"
+```
+
+It installs the package in `/opt/catprinter` (with its own virtualenv), the backend in `/usr/lib/cups/backend/catprinter` and two queues:
+
+| Queue | Takes | Use it for |
+|---|---|---|
+| `CatPrinter` | Anything CUPS can print: PDF, images, text, office documents | Printing from any application or computer |
+| `CatPrinter-ZPL` | Raw ZPL | Mercado Libre (or any Zebra) labels, exactly as downloaded |
+
+```bash
+$ lp -d CatPrinter photo.jpg -o CatTone=Gray
+$ lp -d CatPrinter-ZPL etiqueta.txt
+```
+
+`CatPrinter` options:
+
+| Option | Values | Notes |
+|---|---|---|
+| Paper (`PageSize`) | 48x50, 48x100 (default), 48x150, 48x297 mm, custom lengths, **A4 / Letter** | Blank space is trimmed. A4 and Letter pages are shrunk to the 48 mm width, so applications lay out a normal page. |
+| Tone (`CatTone`) | **Threshold** (text, labels, barcodes), Dither (photos), Gray (16 levels, MXW01 only) | |
+| Darkness (`CatEnergy`) | 60, 80, **100** | |
+
+`CatPrinter-ZPL` takes `-o CatZplLayout=scale` to shrink wide labels instead of rebuilding them.
+
+If the printer is off or asleep the backend tells CUPS to retry, so the job waits in the queue (`printer-error-policy=retry-job`) and prints once the printer is back. `sudo ./cups/install.sh --uninstall` removes everything.
+
+## From Windows
+
+With `--share`, both queues are published on the local network (port 631; if `ufw` is active, `sudo ufw allow 631/tcp`).
+
+- **Documents and images:** *Settings → Bluetooth & devices → Printers & scanners → Add device → Add manually → Select a shared printer by name*, enter `http://<linux-host>:631/printers/CatPrinter` and pick the **Microsoft IPP Class Driver** (or *Generic → MS Publisher Imagesetter*). Choose the 48 mm paper sizes, or A4 to get a page shrunk to the roll.
+- **ZPL labels:** add `http://<linux-host>:631/printers/CatPrinter-ZPL` the same way but with the **Generic / Text Only** driver, which passes the text through, and print the label `.txt` from Notepad.
+
+The Windows side has not been tested yet; the Linux side (CUPS raster and ZPL through the backend) has.
 
 # Different Algorithms
 
