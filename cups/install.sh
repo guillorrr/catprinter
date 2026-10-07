@@ -68,7 +68,8 @@ chmod 0700 "$BACKEND"
 echo "Creating the $QUEUE and $ZPL_QUEUE queues ($URI)..."
 lpadmin -p "$QUEUE" -E -v "$URI" -P "$REPO/cups/catprinter.ppd" \
     -D "Cat Printer (48 mm)" -L "Bluetooth" \
-    -o printer-error-policy=retry-job
+    -o printer-error-policy=retry-job \
+    -o print-scaling-default=fit
 lpadmin -p "$ZPL_QUEUE" -E -v "$URI" -m raw \
     -D "Cat Printer - ZPL labels" -L "Bluetooth" \
     -o printer-error-policy=retry-job 2>/dev/null

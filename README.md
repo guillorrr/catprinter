@@ -207,6 +207,7 @@ $ lp -d CatPrinter-ZPL etiqueta.txt
 | Paper (`PageSize`) | 48x50, 48x100 (default), 48x150, 48x297 mm, custom lengths, **A4 / Letter** | Blank space is trimmed. A4 and Letter pages are shrunk to the 48 mm width, so applications lay out a normal page. |
 | Tone (`CatTone`) | **Threshold** (text, labels, barcodes), Dither (photos), Gray (16 levels, MXW01 only) | |
 | Darkness (`CatEnergy`) | 60, 80, **100** | |
+| Scaling (`print-scaling`) | **fit** (set by the installer), fill, none | CUPS's own default for images is to fill the page, which crops the sides of an image on a 48 mm strip; `fit` keeps the whole image. |
 
 `CatPrinter-ZPL` takes `-o CatZplLayout=scale` to shrink wide labels instead of rebuilding them.
 
