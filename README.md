@@ -11,7 +11,9 @@ This repository contains Python code for talking to the cat printer over Bluetoo
 | Model | Protocol | Notes |
 |---|---|---|
 | GB01, GB02, GB03, GT01 | `0x51 0x78` commands on `0xae01` | Original upstream support. |
-| **MXW01** | `0x22 0x21` commands on `0xae01`, image data on `0xae03` | Added in this fork. Detected automatically from its advertised name. |
+| **MXW01** | `0x22 0x21` commands on `0xae01`, image data on `0xae03` | Added in this fork. Detected automatically from its advertised name. Supports 16-level grayscale. |
+
+This fork can also print **ZPL labels** (the Zebra label language Mercado Libre uses for its product and shipping labels). See [ZPL labels](#zpl-labels-mercado-libre).
 
 # Installation
 ```bash
@@ -28,10 +30,13 @@ $ pip install -r requirements.txt
 # Usage
 ```bash
 $ ./print.py --help
-usage: print.py [-h] [-l {debug,info,warn,error}] [-b {mean-threshold,floyd-steinberg,atkinson,halftone,none}] [-s] [-d DEVICE] [-e ENERGY]
+usage: print.py [-h] [-l {debug,info,warn,error}]
+                [-b {mean-threshold,floyd-steinberg,atkinson,halftone,none}]
+                [-s] [-d DEVICE] [-g] [--zpl-layout {reflow,scale}]
+                [-e ENERGY]
                 filename
 
-prints an image on your cat thermal printer
+prints an image or a ZPL label on your cat thermal printer
 
 positional arguments:
   filename
@@ -40,15 +45,28 @@ options:
   -h, --help            show this help message and exit
   -l {debug,info,warn,error}, --log-level {debug,info,warn,error}
   -b {mean-threshold,floyd-steinberg,atkinson,halftone,none}, --img-binarization-algo {mean-threshold,floyd-steinberg,atkinson,halftone,none}
-                        Which image binarization algorithm to use. If 'none' is used, no binarization will be used. In this case the image has to
-                        have a width of 384 px.
-  -s, --show-preview    If set, displays the final image and asks the user for confirmation before printing.
+                        Which image binarization algorithm to use. If 'none'
+                        is used, no binarization will be used. In this case
+                        the image has to have a width of 384 px.
+  -s, --show-preview    If set, displays the final image and asks the user for
+                        confirmation before printing.
   -d DEVICE, --device DEVICE
-                        The printer's Bluetooth Low Energy (BLE) address (MAC address on Linux; UUID on macOS) or advertisement name (e.g.:
-                        "GT01", "GB02", "GB03", "MXW01"). If omitted, the the script will try to auto discover the printer based on its advertised BLE
-                        services.
+                        The printer's Bluetooth Low Energy (BLE) address (MAC
+                        address on Linux; UUID on macOS) or advertisement name
+                        (e.g.: "GT01", "GB02", "GB03", "MXW01"). If omitted,
+                        the the script will try to auto discover the printer
+                        based on its advertised BLE services.
+  -g, --grayscale       Print with 16 real gray levels instead of dithered
+                        black and white. Only the MXW01 supports it; other
+                        models fall back to dithering. Ignored for ZPL labels.
+  --zpl-layout {reflow,scale}
+                        How to fit ZPL labels wider than the paper (e.g. 10 cm
+                        shipping labels): "reflow" rebuilds them as a single
+                        column, keeping text and QR codes at their original
+                        size; "scale" shrinks them as drawn.
   -e ENERGY, --energy ENERGY
-                        Thermal energy. Between 0x0000 (light) and 0xffff (darker, default).
+                        Thermal energy. Between 0x0000 (light) and 0xffff
+                        (darker, default).
 ```
 
 # Example
@@ -86,6 +104,22 @@ $ ./print.py -d 48:0F:57:44:BF:3C muzza.png   # or just: ./print.py muzza.png
 
 `-e/--energy` keeps working: the `0x0000`-`0xffff` range is mapped to the MXW01's 0-100 intensity.
 
+## Grayscale
+
+`-g/--grayscale` uses the MXW01's 4 bits-per-dot mode: 16 real burn levels instead of dithered black and white, which looks much better for photos. Other models ignore it and print dithered as usual.
+
+```bash
+$ ./print.py -g photo.jpg
+```
+
+## Reliability
+
+- The connection is retried up to 3 times: the first attempt often fails while the printer wakes up. It falls asleep after 5-6 idle minutes; if it is not found at all, press its button.
+- The wait for the "print complete" notification scales with the job length (15 s + 1 s per 15 rows), so long jobs are not cut off.
+- Image rows are sent in as few BLE packets as the negotiated MTU allows.
+
+These ideas come from [Aelieth/catprinter-linux](https://github.com/Aelieth/catprinter-linux), a Rust daemon that exposes the printer to CUPS as an IPP Everywhere printer.
+
 ## Protocol
 
 Implemented in [`catprinter/mxw01.py`](catprinter/mxw01.py), based on [MaikelChan/CatPrinterBLE](https://github.com/MaikelChan/CatPrinterBLE).
@@ -102,8 +136,8 @@ A print job goes like this:
 
 1. `0xA1` get status: the response carries battery, temperature and errors (no paper, overheated, low battery). The job is aborted if the printer reports an error.
 2. `0xA2` set intensity (0-100).
-3. `0xA9` print request with `[rows lo, rows hi, 0x30, mode]` (mode `0x00` = 1 bit per pixel). The printer acknowledges it.
-4. Image rows to `0xae03`: 48 bytes per row (384 px), LSB first, `1` = black. Jobs shorter than 90 rows are padded with blank rows.
+3. `0xA9` print request with `[rows lo, rows hi, 0x30, mode]` (mode `0x00` = 1 bit per pixel, `0x02` = 4 bits per pixel). The printer acknowledges it.
+4. Image rows to `0xae03`. 1 bpp: 48 bytes per row (384 px), LSB first, `1` = black. 4 bpp: 192 bytes per row, level `0` = white to `15` = black, even pixels in the high nibble. Jobs shorter than 90 rows are padded with blank rows.
 5. `0xAD` flush, then wait for `0xAA` (print complete).
 
 ## Linux: why it bypasses BlueZ
@@ -125,6 +159,24 @@ The GB/GT models are unaffected: they keep going through `bleak` on every platfo
 
 - Only one central can be connected at a time: close the official app on your phone (or turn its Bluetooth off) before printing.
 - To see what the radio is doing, capture HCI traffic while printing: `sudo btmon -w btmon.snoop`, then read it with `btmon -r btmon.snoop`.
+
+# ZPL labels (Mercado Libre)
+
+`print.py` also accepts ZPL files (anything starting with `^XA`), such as the `.txt` labels Mercado Libre gives you for a Zebra printer. They are drawn locally by [`catprinter/zpl.py`](catprinter/zpl.py); nothing is sent to an online service.
+
+```bash
+$ ./print.py etiqueta.txt
+```
+
+Supported commands: `^XA`/`^XZ`, `^LH`, `^FO`, `^FD`/`^FS`, `^FH`, `^CI28`, `^A0`, `^FB`, `^GB`, `^GFA` (including ZPL compression), `^BY`/`^BC` (Code 128) and `^BQ` (QR code). Anything else is ignored.
+
+ZPL works in 203 dpi dots, the same resolution as these printers, so:
+
+- **Labels that fit** (e.g. product labels) are printed 1:1, and barcodes keep their exact module width so they still scan. Files with several stickers side by side are split into columns and printed one after the other.
+- **Labels wider than the paper** (e.g. 10 cm Flex shipping labels) are, by default, **rebuilt as a single 48 mm column** (`--zpl-layout reflow`). Text and QR codes keep their original size; fields that sat side by side go one under the other when they don't fit together, a logo next to text stays next to it, and vertical rules are dropped. A 10x15 cm Flex label comes out at about 4.8x12 cm.
+- `--zpl-layout scale` shrinks the label as drawn instead (about 48% for a 10 cm label), which keeps the layout but makes the text very small.
+
+The text uses the closest installed condensed bold font to Zebra's `^A0` (Liberation Sans Narrow, Nimbus Sans Narrow or DejaVu Sans Condensed).
 
 # Different Algorithms
 

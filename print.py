@@ -8,12 +8,13 @@ import os
 from catprinter import logger
 from catprinter.cmds import PRINT_WIDTH
 from catprinter.ble import run_ble
-from catprinter.img import read_img, show_preview
+from catprinter.img import read_img, read_img_gray_levels, show_preview
+from catprinter.zpl import is_zpl, zpl_to_img
 
 
 def parse_args():
     args = argparse.ArgumentParser(
-        description='prints an image on your cat thermal printer')
+        description='prints an image or a ZPL label on your cat thermal printer')
     args.add_argument('filename', type=str)
     args.add_argument('-l', '--log-level', type=str,
                       choices=['debug', 'info', 'warn', 'error'], default='info')
@@ -35,6 +36,14 @@ def parse_args():
                           'If omitted, the the script will try to auto discover '
                           'the printer based on its advertised BLE services.'
                       ))
+    args.add_argument('-g', '--grayscale', action='store_true',
+                      help='Print with 16 real gray levels instead of dithered black and white. '
+                           'Only the MXW01 supports it; other models fall back to dithering. '
+                           'Ignored for ZPL labels.')
+    args.add_argument('--zpl-layout', choices=['reflow', 'scale'], default='reflow',
+                      help='How to fit ZPL labels wider than the paper (e.g. 10 cm shipping '
+                           'labels): "reflow" rebuilds them as a single column, keeping text '
+                           'and QR codes at their original size; "scale" shrinks them as drawn.')
     args.add_argument('-e', '--energy', type=lambda h: int(h.removeprefix("0x"), 16),
                       help="Thermal energy. Between 0x0000 (light) and 0xffff (darker, default).",
                       default="0xffff")
@@ -60,11 +69,16 @@ def main():
         return
 
     try:
-        bin_img = read_img(
-            args.filename,
-            PRINT_WIDTH,
-            args.img_binarization_algo,
-        )
+        if is_zpl(filename):
+            # ZPL labels are drawn 1:1 in printer dots; no resizing or dithering.
+            with open(filename, encoding='utf-8', errors='replace') as f:
+                bin_img = zpl_to_img(f.read(), PRINT_WIDTH, args.zpl_layout)
+        else:
+            bin_img = read_img(
+                args.filename,
+                PRINT_WIDTH,
+                args.img_binarization_algo,
+            )
         if args.show_preview:
             show_preview(bin_img)
     except RuntimeError as e:
@@ -72,8 +86,13 @@ def main():
         return
 
     logger.info(f'✅ Read image: {bin_img.shape} (h, w) pixels')
+    gray_levels = None
+    if args.grayscale and not is_zpl(filename):
+        gray_levels = read_img_gray_levels(filename, PRINT_WIDTH)
+
     # Try to autodiscover a printer if --device is not specified.
-    asyncio.run(run_ble(bin_img, energy=args.energy, device=args.device))
+    asyncio.run(run_ble(bin_img, energy=args.energy, device=args.device,
+                        gray_levels=gray_levels))
 
 
 if __name__ == '__main__':
