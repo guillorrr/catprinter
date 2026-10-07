@@ -6,7 +6,7 @@ import sys
 import os
 
 from catprinter import logger
-from catprinter.cmds import PRINT_WIDTH, cmds_print_img
+from catprinter.cmds import PRINT_WIDTH
 from catprinter.ble import run_ble
 from catprinter.img import read_img, show_preview
 
@@ -31,7 +31,7 @@ def parse_args():
                       help=(
                           'The printer\'s Bluetooth Low Energy (BLE) address '
                           '(MAC address on Linux; UUID on macOS) '
-                          'or advertisement name (e.g.: "GT01", "GB02", "GB03"). '
+                          'or advertisement name (e.g.: "GT01", "GB02", "GB03", "MXW01"). '
                           'If omitted, the the script will try to auto discover '
                           'the printer based on its advertised BLE services.'
                       ))
@@ -72,11 +72,8 @@ def main():
         return
 
     logger.info(f'✅ Read image: {bin_img.shape} (h, w) pixels')
-    data = cmds_print_img(bin_img, energy=args.energy)
-    logger.info(f'✅ Generated BLE commands: {len(data)} bytes')
-
     # Try to autodiscover a printer if --device is not specified.
-    asyncio.run(run_ble(data, device=args.device))
+    asyncio.run(run_ble(bin_img, energy=args.energy, device=args.device))
 
 
 if __name__ == '__main__':

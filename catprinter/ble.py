@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import sys
 import uuid
 from typing import Optional
 
@@ -12,6 +13,9 @@ try:
 except ImportError:
     BleakClientBlueZDBus = None
 from catprinter import logger
+from catprinter.cmds import cmds_print_img
+from catprinter.att import LeAttClient
+from catprinter.mxw01 import print_mxw01
 
 # For some reason, bleak reports the 0xaf30 service on my macOS, while it reports
 # 0xae30 (which I believe is correct) on my Raspberry Pi. This hacky workaround
@@ -67,13 +71,26 @@ def chunkify(data, chunk_size):
     return (data[i : i + chunk_size] for i in range(0, len(data), chunk_size))
 
 
-async def get_device_address(device: Optional[str]):
+MXW01_NAMES = ("MXW01",)
+
+
+async def get_device(device: Optional[str]):
     # See if we were passed a string that smells like an UUID or MAC address.
+    address = None
     if device:
         with contextlib.suppress(ValueError):
-            return str(uuid.UUID(device))
+            address = str(uuid.UUID(device))
         if device.count(":") == 5 and device.replace(":", "").isalnum():
-            return device
+            address = device
+
+    if address:
+        # Scan for it anyway: we need the advertised name to tell the model apart.
+        found = await BleakScanner.find_device_by_address(address, timeout=SCAN_TIMEOUT_S)
+        if found is None:
+            raise RuntimeError(
+                f"Unable to find printer {address}, make sure it is turned on and in range"
+            )
+        return found
 
     return await scan(device, timeout=SCAN_TIMEOUT_S)
 
@@ -93,14 +110,47 @@ async def wait_for_printer_ready(event):
     logger.info("✅ Printer is ready, disconnecting...")
 
 
-async def run_ble(data, device: Optional[str]):
+async def run_mxw01(ble_device, img, energy: int):
+    # On Linux, BlueZ insists on connecting to the MXW01 over BR/EDR (see att.py),
+    # so we bypass it and open the LE connection ourselves.
+    if sys.platform.startswith("linux"):
+        client = LeAttClient(ble_device.address)
+    else:
+        client = BleakClient(ble_device)
     try:
-        address = await get_device_address(device)
+        async with client:
+            logger.info(f"✅ Connected; MTU: {client.mtu_size}")
+            await print_mxw01(client, img, energy)
+    except OSError as e:
+        logger.error(f"🛑 Could not connect to the printer: {e}")
+    except (RuntimeError, asyncio.TimeoutError) as e:
+        logger.error(f"🛑 {e or 'Timed out waiting for the printer.'}")
+
+
+async def run_ble(img, energy: int, device: Optional[str]):
+    try:
+        ble_device = await get_device(device)
     except RuntimeError as e:
         logger.error(f"🛑 {e}")
         return
-    logger.info(f"⏳ Connecting to {address}...")
-    async with BleakClient(address) as client:
+    logger.info(f"⏳ Connecting to {ble_device}...")
+
+    if ble_device.name in MXW01_NAMES:
+        logger.info("ℹ️ Detected an MXW01 printer.")
+        await run_mxw01(ble_device, img, energy)
+        return
+
+    client = BleakClient(ble_device)
+    try:
+        await client.connect()
+    except asyncio.TimeoutError:
+        logger.error(
+            "🛑 Timed out connecting to the printer. It only accepts one connection at a "
+            "time: close the phone app (or turn off the phone's Bluetooth) and power-cycle "
+            "the printer."
+        )
+        return
+    try:
         # XXX: BlueZ incorrectly reports a fixed MTU of 23; force MTU negotiation manually.
         # https://bleak.readthedocs.io/en/latest/api/client.html#bleak.BleakClient.mtu_size
         # Only use this library on Linux, not MacOS
@@ -108,6 +158,9 @@ async def run_ble(data, device: Optional[str]):
             await client._acquire_mtu()
 
         logger.info(f"✅ Connected: {client.is_connected}; MTU: {client.mtu_size}")
+
+        data = cmds_print_img(img, energy=energy)
+        logger.info(f"✅ Generated BLE commands: {len(data)} bytes")
         chunk_size = client.mtu_size - 3
         event = asyncio.Event()
 
@@ -128,3 +181,5 @@ async def run_ble(data, device: Optional[str]):
             )
         except asyncio.TimeoutError:
             logger.error("🛑 Timed out while waiting for printer done event. Exiting.")
+    finally:
+        await client.disconnect()
