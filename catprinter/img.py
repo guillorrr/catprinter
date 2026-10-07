@@ -170,6 +170,17 @@ def read_img(
     return ~resized
 
 
+def read_img_gray_levels(filename, print_width):
+    '''Reads an image as burn levels for 4 bpp printing: 0 = white ... 15 = black.'''
+    im = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
+    if im is None:
+        raise RuntimeError(f'Could not read image {filename}')
+    height, width = im.shape
+    resized = cv2.resize(
+        im, (print_width, int(height * print_width / width)), interpolation=cv2.INTER_AREA)
+    return (255 - resized) >> 4
+
+
 def show_preview(bin_img):
     # Convert from our boolean representation to float and invert.
     preview_img = (~bin_img).astype(float)

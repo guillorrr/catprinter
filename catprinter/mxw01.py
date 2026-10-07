@@ -12,6 +12,8 @@ Protocol reference: https://github.com/MaikelChan/CatPrinterBLE
 '''
 import asyncio
 
+import numpy as np
+
 from catprinter import logger
 from catprinter.cmds import PRINT_WIDTH, CHECKSUM_TABLE, byte_encode
 
@@ -26,12 +28,21 @@ CMD_PRINT_COMPLETE = 0xAA
 CMD_PRINT_DATA_FLUSH = 0xAD
 
 PRINT_MODE_MONOCHROME = 0x00
+# 4 bits per dot: 16 real burn levels instead of dithered black and white.
+PRINT_MODE_GRAYSCALE = 0x02
 
 # The printer seems to ignore jobs that are too short, so pad them with blank rows.
 MIN_ROWS = 90
+# The A9 print request carries the row count as a 16-bit number.
+MAX_ROWS = 0xffff
 
 WAIT_FOR_RESPONSE_TIMEOUT_S = 10
-WAIT_FOR_PRINT_COMPLETE_TIMEOUT_S = 60
+# Waiting for "print complete" scales with the job: the head prints roughly 15 rows per second
+# at worst, so a fixed timeout would give up on long jobs that are still printing.
+PRINT_COMPLETE_BASE_TIMEOUT_S = 15
+PRINT_COMPLETE_ROWS_PER_S = 15
+# Pause after each write to the data characteristic.
+WAIT_AFTER_EACH_CHUNK_S = 0.008
 
 STATUS_ERRORS = {
     0x01: "no paper",
@@ -59,11 +70,35 @@ def energy_to_intensity(energy):
     return round(energy * 100 / 0xffff)
 
 
+def print_complete_timeout(n_rows):
+    return PRINT_COMPLETE_BASE_TIMEOUT_S + n_rows / PRINT_COMPLETE_ROWS_PER_S
+
+
 def img_to_rows(img):
+    '''Packs a boolean image (True = black) into 1 bpp rows: LSB = leftmost pixel.'''
     rows = [bytes(byte_encode(row)) for row in img]
     blank = bytes(PRINT_WIDTH // 8)
     rows.extend(blank for _ in range(MIN_ROWS - len(rows)))
     return rows
+
+
+def levels_to_rows(levels):
+    '''Packs burn levels (0 = white ... 15 = black) into 4 bpp rows.
+
+    Even pixels go in the high nibble, odd pixels in the low one.
+    '''
+    levels = np.clip(levels, 0, 15).astype(np.uint8)
+    packed = (levels[:, 0::2] << 4) | levels[:, 1::2]
+    rows = [row.tobytes() for row in packed]
+    blank = bytes(PRINT_WIDTH // 2)
+    rows.extend(blank for _ in range(MIN_ROWS - len(rows)))
+    return rows
+
+
+def chunk_rows(rows, max_write):
+    '''Groups whole rows into writes as large as the ATT MTU allows.'''
+    per_write = max(1, max_write // len(rows[0]))
+    return [b"".join(rows[i:i + per_write]) for i in range(0, len(rows), per_write)]
 
 
 class Responses:
@@ -103,7 +138,8 @@ async def check_status(client, responses):
     logger.info(f"✅ Printer OK. Battery: {battery}; temperature: {temperature}")
 
 
-async def print_mxw01(client, img, energy):
+async def print_mxw01(client, img, energy, gray_levels=None):
+    '''Prints a boolean image (True = black), or 4 bpp burn levels if gray_levels is given.'''
     responses = Responses()
     await client.start_notify(NOTIFY_CHARACTERISTIC_UUID, responses.receive)
 
@@ -112,19 +148,27 @@ async def print_mxw01(client, img, energy):
     intensity = energy_to_intensity(energy)
     await send_cmd(client, CMD_PRINT_INTENSITY, [intensity])
 
-    rows = img_to_rows(img)
+    if gray_levels is not None:
+        rows, mode = levels_to_rows(gray_levels), PRINT_MODE_GRAYSCALE
+    else:
+        rows, mode = img_to_rows(img), PRINT_MODE_MONOCHROME
     n = len(rows)
-    await send_cmd(client, CMD_PRINT, [n & 0xff, n >> 8, 0x30, PRINT_MODE_MONOCHROME])
+    if n > MAX_ROWS:
+        raise RuntimeError(f"The image has {n} rows; the printer accepts at most {MAX_ROWS}.")
+    await send_cmd(client, CMD_PRINT, [n & 0xff, n >> 8, 0x30, mode])
     resp = await responses.wait(CMD_PRINT, WAIT_FOR_RESPONSE_TIMEOUT_S)
     if len(resp) > 6 and resp[6] != 0:
         raise RuntimeError(f"Printer rejected the print request: {resp.hex(' ')}")
 
-    logger.info(f"⏳ Sending {n} rows at intensity {intensity}...")
-    for row in rows:
-        await client.write_gatt_char(DATA_CHARACTERISTIC_UUID, row, response=False)
-        await asyncio.sleep(0.005)
+    chunks = chunk_rows(rows, client.mtu_size - 3)
+    logger.info(
+        f"⏳ Sending {n} rows ({'grayscale' if mode == PRINT_MODE_GRAYSCALE else '1 bit'}) "
+        f"at intensity {intensity}, in {len(chunks)} writes...")
+    for chunk in chunks:
+        await client.write_gatt_char(DATA_CHARACTERISTIC_UUID, chunk, response=False)
+        await asyncio.sleep(WAIT_AFTER_EACH_CHUNK_S)
 
     await send_cmd(client, CMD_PRINT_DATA_FLUSH, [0x00])
     logger.info("⏳ Waiting for printer to finish...")
-    await responses.wait(CMD_PRINT_COMPLETE, WAIT_FOR_PRINT_COMPLETE_TIMEOUT_S)
+    await responses.wait(CMD_PRINT_COMPLETE, print_complete_timeout(n))
     logger.info("✅ Done printing.")
