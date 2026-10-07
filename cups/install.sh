@@ -43,7 +43,8 @@ for arg in "$@"; do
         *) DEVICE=$arg ;;
     esac
 done
-URI="catprinter://$DEVICE"
+# One slash: with "//" CUPS parses the address as host:port and rejects the URI.
+URI="catprinter:/$DEVICE"
 
 echo "Installing the catprinter package in $PREFIX..."
 mkdir -p "$PREFIX"

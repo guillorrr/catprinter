@@ -2,8 +2,9 @@
 computers on the network) print on a cat printer.
 
 CUPS runs it as `catprinter job-id user title copies options [file]` with the
-printer's URI in $DEVICE_URI, e.g. catprinter://48:0F:57:44:BF:3C or
-catprinter://auto. The job arrives either as CUPS raster (from a queue using
+printer's URI in $DEVICE_URI, e.g. catprinter:/48:0F:57:44:BF:3C or
+catprinter:/auto. (A single slash: with "//", CUPS would read the address as
+host:port and reject it.) The job arrives either as CUPS raster (from a queue using
 cups/catprinter.ppd) or as raw ZPL (from a raw queue).
 
 Run without arguments, it lists the device class for `lpinfo -v`.
@@ -59,7 +60,8 @@ def parse_options(text):
 
 
 def device_from_uri(uri):
-    target = uri.split("://", 1)[-1].strip("/")
+    '''catprinter:/48:0F:57:44:BF:3C -> "48:0F:57:44:BF:3C"; catprinter:/auto -> None.'''
+    target = uri.partition(":")[2].strip("/")
     return None if target in ("", "auto") else target
 
 
@@ -123,7 +125,7 @@ def main(argv=None):
     logger.setLevel(logging.INFO)
     logger.handlers[:] = [CupsLogHandler()]
     options = parse_options(argv[5])
-    device = device_from_uri(os.environ.get("DEVICE_URI", "catprinter://auto"))
+    device = device_from_uri(os.environ.get("DEVICE_URI", "catprinter:/auto"))
 
     if len(argv) == 7:
         with open(argv[6], "rb") as f:
